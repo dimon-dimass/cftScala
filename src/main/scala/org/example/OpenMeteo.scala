@@ -12,6 +12,7 @@ import org.apache.spark.sql.functions._
 import os.Path
 import sttp.model.Uri
 
+import java.util.Properties
 import scala.+:
 
 private class OpenMeteoClient(url: Uri = uri"https://api.open-meteo.com/v1/forecast") extends LazyLogging {
@@ -377,6 +378,11 @@ object OpenMeteo extends LazyLogging {
     "max" -> ((name, prefix, suffix) => round(max(col(name).cast(DoubleType)), 2).as(s"${prefix}_${name}_$suffix"))
   )
 
+  private val JDBCUrl = "jdbc:postgresql://localhost:5433/"
+  private val DBConnProperties = new Properties()
+  DBConnProperties.put("user", "admin")
+  DBConnProperties.put("password", "admin")
+
   def toDF(json: String, spark: SparkSession): DataFrame = {
     logger.info(s"Starting to convert String in JSON-format to DataFrame")
     import spark.implicits._
@@ -421,6 +427,12 @@ object OpenMeteo extends LazyLogging {
     logger.info(s"DataFrame is successfully loaded to .csv format at ${path.toString()}")
   }
 
+  private def toDatabase(df: OpenMeteoView, dbName: String, connProperties: Properties, schemaName: String, tableName: String, strategy: String = "overwrite"): Unit = {
+    logger.info("Starting to load DataFrame to Database")
+    df.data.write
+      .jdbc(s"${OpenMeteo.JDBCUrl}$dbName", s"${schemaName}.$tableName", connProperties)
+
+  }
 }
 
 case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
