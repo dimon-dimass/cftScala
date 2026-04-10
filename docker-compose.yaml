@@ -1,0 +1,16 @@
+services:
+
+  postgres:
+    image: postgres
+    restart: always
+    container_name: postgres_db
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=open_meteo_stats
+      - POSTGRES_DB=test
+    ports:
+      - '5433:5432'
+    volumes:
+      - /home/dmitrymosh/pg_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
