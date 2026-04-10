@@ -50,7 +50,7 @@ private class OpenMeteoClient(url: Uri = uri"https://api.open-meteo.com/v1/forec
 
 case class OpenMeteoView(val data: DataFrame, val units: DataFrame, spark: SparkSession) extends LazyLogging {
   /*
-  класс объектов, здесь будут реализованы методы связанные с units (их нормализация, измененя типа "time" и т.д.)+
+  Класс объектов, здесь будут реализованы методы связанные с units (их нормализация, измененя типа "time" и т.д.)+
   */
   import spark.implicits._
 
@@ -68,7 +68,7 @@ case class OpenMeteoView(val data: DataFrame, val units: DataFrame, spark: Spark
     copy(newData)
   }
 
-  def show(n: Int = 5): Unit = {
+  def show(n: Int = 20): Unit = {
     data.show(n)
     units.show()
   }
@@ -421,21 +421,11 @@ object OpenMeteo extends LazyLogging {
     logger.info(s"DataFrame is successfully loaded to .csv format at ${path.toString()}")
   }
 
-//  private def toDatabase(): Unit = {
-//
-//  }
 }
 
 case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
 
-//  private val  nestedSections = df.schema.fields
-//    .filter(_.dataType.isInstanceOf[StructType])
-//    .map(_.name)
-//  private val convDFs = nestedSections.map {
-//    name => (name, df.select(s"$name.*"))
-//  }.toMap
   logger.info(s"Created OpenMeteo object via DataFrame: \n ${df.schema.mkString("\n")}")
-  // Эту часть еще обдумать, т.к. можно придумать более динамичную структуру через Map например
   private val utc_offset = col("utc_offset_seconds")
   private val tableName1: String = "hourly"
   private val tableName2: String = "daily"
@@ -495,10 +485,8 @@ case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
       .join(hourlyViewTotalDaylight, col("avg24.time")===col("ttlDl.time"), col("avg24.*") +: hourlyViewTotalDaylight.data.columns.filter(_ != "time").map(c => col(s"ttlDl.$c")), "avg24", "ttlDl")
 //      .drop(Seq("ttlDl.time"))
       .toTimestamp(Seq("time"))
-      .join(dailyReadable, col("avg24.time")===col("d.time"), col("avg24.*") +: dailyReadable.data.columns.filter(_ != "time").map(c => col(s"d.$c")), "avg24", "d")
+//      .join(dailyReadable, col("avg24.time")===col("d.time"), col("avg24.*") +: dailyReadable.data.columns.filter(_ != "time").map(c => col(s"d.$c")), "avg24", "d")
 //      .drop(Seq("d.time"))
-
-    println(s"ебанный hourlyViewAgg \n ${hourlyViewAgg.show()}")
 
     OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Hourly.csv", hourlyReadable.select("time" +: (tempCols ++ precipCols ++ speedCols)), spark)
     OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Daily.csv", dailyReadable, spark)
