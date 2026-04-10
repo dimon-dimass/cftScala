@@ -136,13 +136,13 @@ case class OpenMeteoView(val data: DataFrame, val units: DataFrame, spark: Spark
 //    }
 //  }
 
-  def toTimestamp(cols: Seq[String], toFormat: String = "ISO8601"): OpenMeteoView = {
+  def toTimestamp(cols: Seq[String], toFormat: String = "iso"): OpenMeteoView = {
     val strFormat = OpenMeteo.Formats.getOrElse(toFormat, "yyyy-MM-dd HH:mm:ss")
 
     val tsPattern: Map[String, (Column => Column, String)] = Map(
-      "unixtime" -> (c => from_unixtime(c, strFormat), s"timestamp_$toFormat"),
-      "timestamp_date" -> (c => date_format(c, strFormat), s"timestamp_$toFormat"),
-      "timestamp_ISO8601" -> (c => date_format(c, strFormat), s"timestamp_$toFormat")
+      "unixtime" -> (c => from_unixtime(c, strFormat), s"$toFormat"),
+      "date" -> (c => date_format(c, strFormat), s"$toFormat"),
+      "iso" -> (c => date_format(c, strFormat), s"$toFormat")
     )
 
     transform(cols, tsPattern)
@@ -179,7 +179,7 @@ case class OpenMeteoView(val data: DataFrame, val units: DataFrame, spark: Spark
   def toMetrPerSec(cols: Seq[String]) = {
     val speedPatterns: Map[String, (Column => Column, String)] = Map(
       "kn" -> (c => round(c.cast(DoubleType)*0.5144, 2), "m_per_s"),
-      "km_per_s" -> (c => round(c.cast(DoubleType)*0.2778, 2), "m_per_s")
+      "km_per_h" -> (c => round(c.cast(DoubleType)*0.2778, 2), "m_per_s")
     )
 
     transform(cols, speedPatterns)
@@ -366,7 +366,7 @@ object OpenMeteo extends LazyLogging {
   */
 
   val Formats: Map[String, String] = Map(
-    "ISO8601" -> "yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX",
+    "iso" -> "yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX",
     "date" -> "yyyy-MM-dd"
   )
 
@@ -406,18 +406,18 @@ object OpenMeteo extends LazyLogging {
 
   private def toCsv(path: String, df: OpenMeteoView, spark: SparkSession): Unit = {
     logger.info(s"Starting to load DataFrame to CSV format at $path")
-    val outputDF = df.mergeFieldNames().data
+//    val outputDF = df.mergeFieldNames().data
 
-    outputDF.write.mode("overwrite").option("header", "true").csv(path)
+    df.data.write.mode("overwrite").option("header", "true").csv(path)
     logger.info(s"DataFrame is successfully loaded to .csv format at $path")
   }
 
   private def toCsv(path: os.Path, df: OpenMeteoView, spark: SparkSession): Unit = {
     logger.info(s"Starting to load DataFrame to CSV format at ${path.toString()}")
 
-    val outputDF = df.mergeFieldNames().data
+//    val outputDF = df.mergeFieldNames().data
 
-    outputDF.write.mode("overwrite").option("header", "true").csv(path.toString())
+    df.data.write.mode("overwrite").option("header", "true").csv(path.toString())
     logger.info(s"DataFrame is successfully loaded to .csv format at ${path.toString()}")
   }
 
@@ -466,9 +466,9 @@ case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
       .join(dailyReadable, col("h.time").between(col("d.sunrise"), col("d.sunset")), Seq(col("h.*")))
 
 
-    val hourlyViewAvg24H = hourlyView
+    val hourlyViewAvg24H = hourlyReadable
       .agg24H(avgCols, op = Seq("avg"))
-    val hourlyViewTotal24H = hourlyView
+    val hourlyViewTotal24H = hourlyReadable
       .agg24H(totalCols, op = Seq("total"))
 
 
@@ -488,8 +488,8 @@ case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
 //      .join(dailyReadable, col("avg24.time")===col("d.time"), col("avg24.*") +: dailyReadable.data.columns.filter(_ != "time").map(c => col(s"d.$c")), "avg24", "d")
 //      .drop(Seq("d.time"))
 
-    OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Hourly.csv", hourlyReadable.select("time" +: (tempCols ++ precipCols ++ speedCols)), spark)
-    OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Daily.csv", dailyReadable, spark)
+    OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Hourly.csv", hourlyReadable.select("time" +: (tempCols ++ precipCols ++ speedCols)).mergeFieldNames(), spark)
+    OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Daily.csv", dailyReadable.mergeFieldNames(), spark)
     OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Hourly-Aggregated.csv", hourlyViewAgg, spark)
 
   }
