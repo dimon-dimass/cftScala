@@ -366,7 +366,7 @@ object OpenMeteo extends LazyLogging {
   */
 
   val Formats: Map[String, String] = Map(
-    "iso" -> "yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX",
+    "iso" -> "yyyy-MM-dd\'T\'HH:mm:ss\'Z\'",
     "date" -> "yyyy-MM-dd"
   )
 
