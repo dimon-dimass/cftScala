@@ -453,7 +453,7 @@ object OpenMeteo extends LazyLogging {
       case OverwriteInterval(dateCol, keyCols) =>
         val (minDate, maxDate) = df.data.select(min(col(dateCol)), max(col(dateCol))).as[(String, String)].first()
 
-        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
+        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl+dbName, connProperties)
 
         val keyColsData: Map[String, Seq[Any]] = if (keyCols.nonEmpty) {
           val aggExp = keyCols.map(kc => collect_set(col(kc)).as(kc))
@@ -494,7 +494,7 @@ object OpenMeteo extends LazyLogging {
 
       case UpsertConflict(keyCols) =>
         df.data.write.mode("overwrite").jdbc(OpenMeteo.JDBCUrl+dbName, s"${schemaName}.stg_$tableName", connProperties)
-        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
+        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl+dbName, connProperties)
 
         val updateCols = df.data.columns.filterNot(keyCols.contains)
 
@@ -504,14 +504,17 @@ object OpenMeteo extends LazyLogging {
           INSERT INTO ${schemaName}.$tableName
           |SELECT * FROM ${schemaName}.stg_$tableName
           |ON CONFLICT (${keyCols.mkString(", ")})
-          |DO UPDATE SET ?
+          |DO UPDATE SET $setClause
         """.stripMargin
 
         try {
+          conn.setAutoCommit(false)
+
           val stmt = conn.prepareStatement(mergeSql)
-          stmt.setObject(1, setClause)
+
           stmt.executeUpdate()
-          stmt.execute(s"DROP TABLE $schemaName.$tableName")
+          conn.createStatement.execute(s"DROP TABLE $schemaName.stg_$tableName")
+
           conn.commit()
         } catch {
           case e: Exception =>
@@ -520,7 +523,7 @@ object OpenMeteo extends LazyLogging {
         }
 
 //      case Upsert(dateCol, keyCols) =>
-//        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
+//        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl+dbName, connProperties)
 //
 //        val updateCols = df.data.columns.filterNot((keyCols++dateCol).contains)
 //
