@@ -527,6 +527,7 @@ object OpenMeteo extends LazyLogging {
 //        val setClause =
     }
 
+    logger.info("Downloaded DataFrame to Database successfully!")
   }
 }
 

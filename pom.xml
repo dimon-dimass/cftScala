@@ -25,6 +25,7 @@
     <spec2.version>4.23.0</spec2.version>
     <sttp.version>4.0.19</sttp.version>
     <jackson.version>2.21.1</jackson.version>
+    <postgresql.version>42.7.10</postgresql.version>
   </properties>
 
   <dependencies>
@@ -142,6 +143,13 @@
       <groupId>com.typesafe.scala-logging</groupId>
       <artifactId>scala-logging_${scala.binary.version}</artifactId>
       <version>3.9.5</version>
+    </dependency>
+
+    <!-- postgreSql JDBC драйвер -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <version>${postgresql.version}</version>
     </dependency>
   </dependencies>
 
