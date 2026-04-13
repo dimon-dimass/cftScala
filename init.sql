@@ -1,7 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS NSK;
 
-CREATE TABLE IF NOT EXISTS NSK.daily(
-    time	varchar(30)	NOT NULL PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS NSK.hourly_agg_view(
+    "time"	varchar(30)	NOT NULL PRIMARY KEY,
     avg_temperature_2m_24h	numeric,
     avg_relative_humidity_2m_24h	numeric,
     avg_dew_point_2m_24h	numeric,

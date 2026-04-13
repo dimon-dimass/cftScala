@@ -15,6 +15,12 @@ import sttp.model.Uri
 import java.util.Properties
 import scala.+:
 
+sealed trait DBWriteStrategy
+case object OverwriteAll extends DBWriteStrategy
+case class OverwriteInterval(dateCol: String, keyCols: Seq[String]) extends DBWriteStrategy
+case class UpsertConflict(keyCols: Seq[String]) extends DBWriteStrategy
+case class Upsert(dateCol: String, keyCols: Seq[String]) extends DBWriteStrategy
+
 private class OpenMeteoClient(url: Uri = uri"https://api.open-meteo.com/v1/forecast") extends LazyLogging {
   /*
 
@@ -383,6 +389,10 @@ object OpenMeteo extends LazyLogging {
   DBConnProperties.put("user", "admin")
   DBConnProperties.put("password", "admin")
 
+  private val Overwrite = OverwriteAll
+  private val OWInterval = OverwriteInterval("time", Seq.empty)
+  private val Upsert = UpsertConflict(Seq("time"))
+
   def toDF(json: String, spark: SparkSession): DataFrame = {
     logger.info(s"Starting to convert String in JSON-format to DataFrame")
     import spark.implicits._
@@ -427,10 +437,95 @@ object OpenMeteo extends LazyLogging {
     logger.info(s"DataFrame is successfully loaded to .csv format at ${path.toString()}")
   }
 
-  private def toDatabase(df: OpenMeteoView, dbName: String, connProperties: Properties, schemaName: String, tableName: String, strategy: String = "overwrite"): Unit = {
+  private def toDatabase(df: OpenMeteoView, dbName: String, connProperties: Properties, schemaName: String
+                         ,tableName: String, strategy: DBWriteStrategy, spark: SparkSession): Unit = {
     logger.info("Starting to load DataFrame to Database")
-    df.data.write
-      .jdbc(s"${OpenMeteo.JDBCUrl}$dbName", s"${schemaName}.$tableName", connProperties)
+
+    import spark.implicits._
+
+    strategy match {
+      case OverwriteAll =>
+        df.data.write
+          .mode("overwrite")
+          .option("truncate", "true")
+          .jdbc(OpenMeteo.JDBCUrl, s"$schemaName.$tableName", connProperties)
+
+      case OverwriteInterval(dateCol, keyCols) =>
+        val (minDate, maxDate) = df.data.select(min(col(dateCol)), max(col(dateCol))).as[(String, String)].first()
+
+        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
+
+        val keyColsData: Map[String, Seq[Any]] = if (keyCols.nonEmpty) {
+          val aggExp = keyCols.map(kc => collect_set(col(kc)).as(kc))
+          val row = df.data.select(aggExp:_*).first()
+          keyCols.map(c => c -> row.getAs[Seq[Any]](c)).toMap
+        } else Map.empty
+
+        val addConditions = keyCols.map{ c =>
+          val placeHolders = keyColsData(c).map(_ => "?").mkString(", ")
+          s"$c IN ($placeHolders)"
+        }
+
+        val baseSql = s"DELETE FROM ${schemaName}.$tableName WHERE $dateCol BETWEEN ? AND ?"
+        val finSql = if (keyCols.nonEmpty) s"$baseSql AND ${addConditions.mkString(" AND ")}" else baseSql
+
+        try{
+          val deleteStmt = conn.prepareStatement(finSql)
+
+          deleteStmt.setString(1, minDate)
+          deleteStmt.setString(2, maxDate)
+
+          if (keyCols.nonEmpty){
+            var i = 3
+            keyCols.foreach{ colName =>
+              keyColsData(colName).foreach{ value =>
+                deleteStmt.setObject(i, value)
+                i += 1
+              }
+            }
+          }
+
+          deleteStmt.executeUpdate()
+        } finally {
+          conn.close()
+        }
+
+        df.data.write.mode("append").jdbc(OpenMeteo.JDBCUrl, s"${schemaName}.$tableName", connProperties)
+
+      case UpsertConflict(keyCols) =>
+        df.data.write.mode("overwrite").jdbc(OpenMeteo.JDBCUrl, s"${schemaName}.stg_$tableName", connProperties)
+        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
+
+        val updateCols = df.data.columns.filterNot(keyCols.contains)
+
+        val setClause = updateCols.map(c => s"$c = EXCLUDED.$c").mkString(", ")
+
+        val mergeSql = s"""
+          INSERT INTO ${schemaName}.$tableName
+          |SELECT * FROM ${schemaName}.stg_$tableName
+          |ON CONFLICT (${keyCols.mkString(", ")})
+          |DO UPDATE SET ?
+        """.stripMargin
+
+        try {
+          val stmt = conn.prepareStatement(mergeSql)
+          stmt.setObject(1, setClause)
+          stmt.executeUpdate()
+          stmt.execute(s"DROP TABLE $schemaName.$tableName")
+          conn.commit()
+        } catch {
+          case e: Exception =>
+            conn.rollback()
+            throw e
+        }
+
+//      case Upsert(dateCol, keyCols) =>
+//        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
+//
+//        val updateCols = df.data.columns.filterNot((keyCols++dateCol).contains)
+//
+//        val setClause =
+    }
 
   }
 }
@@ -504,6 +599,7 @@ case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
     OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Daily.csv", dailyReadable.mergeFieldNames(), spark)
     OpenMeteo.toCsv(csvLoadPath / "Open-Meteo-Hourly-Aggregated.csv", hourlyViewAgg, spark)
 
+    OpenMeteo.toDatabase(hourlyViewAgg, "open_meteo_stats", OpenMeteo.DBConnProperties, "NSK", "hourly_agg_view", OpenMeteo.Upsert, spark)
   }
 
 
