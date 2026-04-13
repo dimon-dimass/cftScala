@@ -448,7 +448,7 @@ object OpenMeteo extends LazyLogging {
         df.data.write
           .mode("overwrite")
           .option("truncate", "true")
-          .jdbc(OpenMeteo.JDBCUrl, s"$schemaName.$tableName", connProperties)
+          .jdbc(OpenMeteo.JDBCUrl+dbName, s"$schemaName.$tableName", connProperties)
 
       case OverwriteInterval(dateCol, keyCols) =>
         val (minDate, maxDate) = df.data.select(min(col(dateCol)), max(col(dateCol))).as[(String, String)].first()
@@ -490,10 +490,10 @@ object OpenMeteo extends LazyLogging {
           conn.close()
         }
 
-        df.data.write.mode("append").jdbc(OpenMeteo.JDBCUrl, s"${schemaName}.$tableName", connProperties)
+        df.data.write.mode("append").jdbc(OpenMeteo.JDBCUrl+dbName, s"${schemaName}.$tableName", connProperties)
 
       case UpsertConflict(keyCols) =>
-        df.data.write.mode("overwrite").jdbc(OpenMeteo.JDBCUrl, s"${schemaName}.stg_$tableName", connProperties)
+        df.data.write.mode("overwrite").jdbc(OpenMeteo.JDBCUrl+dbName, s"${schemaName}.stg_$tableName", connProperties)
         val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl, connProperties)
 
         val updateCols = df.data.columns.filterNot(keyCols.contains)
