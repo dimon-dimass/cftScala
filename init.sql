@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS NSK.hourly_agg_view(
     avg_visibility_daylight	numeric,
     total_rain_daylight	numeric,
     total_showers_daylight	numeric,
-    total_snowfall_daylight	numeric,
+    total_snowfall_daylight	numeric
 );
 
 CREATE TABLE IF NOT EXISTS NSK.hourly(
