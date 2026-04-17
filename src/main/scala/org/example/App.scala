@@ -14,6 +14,21 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments){
   val api = opt[String](required = false, default = Some("https://api.open-meteo.com/v1/forecast?latitude=55.0344&longitude=82.9434&daily=sunrise,sunset,daylight_duration&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,temperature_80m,temperature_120m,wind_speed_10m,wind_speed_80m,wind_direction_10m,wind_direction_80m,visibility,evapotranspiration,weather_code,soil_temperature_0cm,soil_temperature_6cm,rain,showers,snowfall&timezone=auto&timeformat=unixtime&wind_speed_unit=kn&temperature_unit=fahrenheit&precipitation_unit=inch&start_date=2026-02-12&end_date=2026-03-10"))
   val startDate = opt[String](required = false, default = Some("2026-02-12"))
   val endDate = opt[String](required = false, default = Some("2026-02-28"))
+  val interval = new Subcommand("interval") {
+    val dateCol = opt[String](required = true, default = Some("time"))
+    val keyCols = opt[List[String]](default = Some(Nil))
+  }
+  val upsert = new Subcommand("upsert") {
+    val dateCol = opt[String](required = true, default = Some("time"))
+    val keyCols = opt[List[String]](default = Some(Nil))
+  }
+  val conflict = new Subcommand("conflict") {
+    val keyCols = opt[List[String]](required = true, default = Some(List("time")))
+  }
+
+  addSubcommand(interval)
+  addSubcommand(upsert)
+  addSubcommand(conflict)
 
   verify()
 }
@@ -42,6 +57,14 @@ object App {
         "start_date" -> conf.startDate(),
         "end_date" -> conf.endDate()
       )
+
+    val strategy = conf.subcommand match {
+      case Some(conf.interval) => OverwriteInterval(conf.interval.dateCol(), conf.interval.keyCols())
+      case Some(conf.conflict) => UpsertConflict(conf.conflict.keyCols())
+      case Some(conf.upsert) => Upsert(conf.upsert.dateCol(), conf.upsert.keyCols())
+      case _ => OverwriteAll
+    }
+
     val openMeteo = OpenMeteo(OpenMeteo.toDF(openMeteoFetch.fetchForcast(params),spark), spark)
 
     val tempCols = Seq(
@@ -75,7 +98,7 @@ object App {
 
     val csvLoadPath = os.pwd / "tmp"
 
-    openMeteo.runDefaultPipeline(tempCols, precipCols, speedCols, avgCols, totalCols, tsCols, timeCols, csvLoadPath)
+    openMeteo.runDefaultPipeline(tempCols, precipCols, speedCols, avgCols, totalCols, tsCols, timeCols, csvLoadPath, strategy)
 //    val response = quickRequest.get(uri).send()
 //    val json_res = ujson.read(response.body)
 //

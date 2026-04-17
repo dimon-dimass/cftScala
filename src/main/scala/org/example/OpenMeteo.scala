@@ -608,6 +608,7 @@ case class OpenMeteo(df: DataFrame, spark: SparkSession) extends LazyLogging {
       tsCols: Seq[String],
       timeCols: Seq[String],
       csvLoadPath: os.Path,
+      strategy: DBWriteStrategy
   ): Unit ={
     val hourlyReadable = hourlyView
       .toTimestamp(Seq("time"))
