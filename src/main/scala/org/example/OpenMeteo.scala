@@ -494,6 +494,7 @@ object OpenMeteo extends LazyLogging {
 
       case UpsertConflict(keyCols) =>
         df.data.write.mode("overwrite").jdbc(OpenMeteo.JDBCUrl+dbName, s"${schemaName}.stg_$tableName", connProperties)
+
         val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl+dbName, connProperties)
 
         val updateCols = df.data.columns.filterNot(keyCols.contains)
@@ -520,14 +521,59 @@ object OpenMeteo extends LazyLogging {
           case e: Exception =>
             conn.rollback()
             throw e
+        } finally {
+          conn.close()
         }
 
-//      case Upsert(dateCol, keyCols) =>
-//        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl+dbName, connProperties)
-//
-//        val updateCols = df.data.columns.filterNot((keyCols++dateCol).contains)
-//
-//        val setClause =
+      case Upsert(dateCol, keyCols) =>
+        df.data.write.mode("overwrite").jdbc(OpenMeteo.JDBCUrl+dbName, s"${schemaName}.stg_$tableName", connProperties)
+
+        val conn = java.sql.DriverManager.getConnection(OpenMeteo.JDBCUrl+dbName, connProperties)
+
+        val baseInsertClause =
+          s"""INSERT INTO $schemaName.$tableName
+             |SELECT *
+             |FROM $schemaName.stg_$tableName as stg
+             |WHERE NOT EXISTS (
+              |SELECT 1
+              |FROM $schemaName.$tableName as dds
+              |WHERE stg.$dateCol = dds.$dateCol
+             |""".stripMargin
+
+        val addInsertConditions = keyCols.map(c => s"dds.$c = stg.$c")
+        val insertClause = if (keyCols.nonEmpty) s"$baseInsertClause AND ${addInsertConditions.mkString(" AND ")})" else baseInsertClause
+
+        val updateCols = df.data.columns.filterNot((keyCols++dateCol).contains)
+
+        val setClause = updateCols.map(c => s"dds.$c = stg.$c")
+
+        val baseUpdateClause =
+          s"""UPDATE $schemaName.$tableName dds
+             |SET ${setClause.mkString(" AND ")}
+             |FROM $schemaName.stg_$tableName stg
+             |WHERE dds.$dateCol = stg.$dateCol
+             |""".stripMargin
+
+        val addUpdateConditions = keyCols.map(c => s"dds.$c = stg.$c")
+        val updateClause = if(keyCols.nonEmpty) s"$baseUpdateClause AND ${addUpdateConditions.mkString(" AND ")}" else baseUpdateClause
+
+        try{
+          conn.setAutoCommit(false)
+
+          val statements = conn.createStatement()
+
+          statements.execute(insertClause)
+          statements.execute(updateClause)
+
+          conn.commit()
+        } catch {
+          case e: Exception =>
+            conn.rollback()
+            throw e
+        } finally {
+          conn.close()
+        }
+
     }
 
     logger.info("Downloaded DataFrame to Database successfully!")
